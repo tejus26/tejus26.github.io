@@ -1,0 +1,21 @@
+---
+layout: default
+title: Blogs
+---
+
+<h1>All Blog Posts</h1>
+
+<p>A collection of essays and articles I've written over time.</p>
+
+<div class="essay-list">
+  <ul>
+  {% assign sorted_essays = site.essays | sort: 'date' | reverse %}
+  {% for essay in sorted_essays %}
+    <li>
+      <a href="{{ essay.url | relative_url }}">{{ essay.title }}</a>
+      <span class="date">({{ essay.date | date: "%B %Y" }})</span>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+
