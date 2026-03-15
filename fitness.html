@@ -1,0 +1,163 @@
+---
+layout: default
+title: Fitness
+---
+
+<h1>Fitness</h1>
+
+<div id="fitness-loading">Loading...</div>
+<div id="fitness-error" style="display:none; color:#666;">Could not load workout data.</div>
+<div id="fitness-content" style="display:none;">
+
+  <div id="week-summary"></div>
+
+  <h2>Last 8 weeks</h2>
+  <canvas id="weekly-chart" width="580" height="180" style="display:block; margin-bottom:30px;"></canvas>
+
+  <h2>Recent workouts</h2>
+  <table id="workout-table" style="width:100%; border-collapse:collapse; font-size:10pt;">
+    <thead>
+      <tr style="border-bottom:1px solid #ccc; text-align:left;">
+        <th style="padding:6px 0; font-weight:bold;">Date</th>
+        <th style="padding:6px 0; font-weight:bold;">Type</th>
+        <th style="padding:6px 0; font-weight:bold;">Duration</th>
+        <th style="padding:6px 0; font-weight:bold;">Distance</th>
+        <th style="padding:6px 0; font-weight:bold;">Calories</th>
+        <th style="padding:6px 0; font-weight:bold;">Notes</th>
+      </tr>
+    </thead>
+    <tbody id="workout-rows"></tbody>
+  </table>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  var DATA_URL = "https://raw.githubusercontent.com/tejus26/personal-data/main/workouts.json";
+
+  function mondayOf(dateStr) {
+    var d = new Date(dateStr + "T00:00:00");
+    var day = d.getDay(); // 0=Sun
+    var diff = (day === 0) ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function formatDate(dateStr) {
+    var d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function formatDuration(min) {
+    if (!min) return "—";
+    var h = Math.floor(min / 60);
+    var m = min % 60;
+    return h > 0 ? h + "h " + m + "m" : m + "m";
+  }
+
+  fetch(DATA_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      document.getElementById("fitness-loading").style.display = "none";
+      document.getElementById("fitness-content").style.display = "block";
+
+      var logs = data.logs || [];
+      var goal = (data.goals && data.goals.weekly_workouts) || 5;
+
+      // Sort newest first
+      logs.sort(function (a, b) { return b.date.localeCompare(a.date); });
+
+      // --- Week summary ---
+      var thisMonday = mondayOf(new Date().toISOString().slice(0, 10));
+      var thisWeekLogs = logs.filter(function (w) {
+        return mondayOf(w.date) === thisMonday;
+      });
+      var weekSummaryEl = document.getElementById("week-summary");
+      weekSummaryEl.innerHTML =
+        "<p>This week: <strong>" + thisWeekLogs.length + " / " + goal + " workouts</strong></p>";
+
+      // --- Weekly chart (last 8 weeks) ---
+      var weekCounts = {};
+      logs.forEach(function (w) {
+        var wk = mondayOf(w.date);
+        weekCounts[wk] = (weekCounts[wk] || 0) + 1;
+      });
+
+      // Build 8 week labels ending at current week
+      var weekLabels = [];
+      var weekData = [];
+      var cursor = new Date(thisMonday + "T00:00:00");
+      for (var i = 7; i >= 0; i--) {
+        var d = new Date(cursor);
+        d.setDate(d.getDate() - i * 7);
+        var key = d.toISOString().slice(0, 10);
+        var label = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+        weekLabels.push(label);
+        weekData.push(weekCounts[key] || 0);
+      }
+
+      var ctx = document.getElementById("weekly-chart").getContext("2d");
+      new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: weekLabels,
+          datasets: [{
+            label: "Workouts",
+            data: weekData,
+            backgroundColor: "#000000",
+            borderWidth: 0
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: function (items) { return "Week of " + items[0].label; },
+                label: function (item) { return item.raw + " workout" + (item.raw !== 1 ? "s" : ""); }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { font: { family: "Verdana, Geneva, sans-serif", size: 9 } }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1,
+                font: { family: "Verdana, Geneva, sans-serif", size: 9 }
+              },
+              grid: { color: "#eeeeee" }
+            }
+          }
+        }
+      });
+
+      // --- Workout table ---
+      var tbody = document.getElementById("workout-rows");
+      var recent = logs.slice(0, 20);
+      recent.forEach(function (w, i) {
+        var tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid #eeeeee";
+        tr.innerHTML =
+          "<td style='padding:7px 0; color:#666; font-size:9pt;'>" + formatDate(w.date) + "</td>" +
+          "<td style='padding:7px 0;'>" + (w.type || "—") + "</td>" +
+          "<td style='padding:7px 0;'>" + formatDuration(w.duration_min) + "</td>" +
+          "<td style='padding:7px 0;'>" + (w.distance_km != null ? w.distance_km + " km" : "—") + "</td>" +
+          "<td style='padding:7px 0;'>" + (w.calories || "—") + "</td>" +
+          "<td style='padding:7px 0; color:#666;'>" + (w.notes || "") + "</td>";
+        tbody.appendChild(tr);
+      });
+    })
+    .catch(function () {
+      document.getElementById("fitness-loading").style.display = "none";
+      document.getElementById("fitness-error").style.display = "block";
+    });
+})();
+</script>
